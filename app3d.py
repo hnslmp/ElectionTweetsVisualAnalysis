@@ -314,6 +314,8 @@ vis_df_som = pd.DataFrame({
     'y': coords_normalized[:, 1],
     'som_x': coords[:, 0],
     'som_y': coords[:, 1],
+    'som_x': coords[:, 0],
+    'som_y': coords[:, 1],
     'tweet': tweets_cleaned,
     'engagement': df['engagement'],
     'engagement_log': df['engagement_log'],
@@ -809,6 +811,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
 
     # Filter sentiment data for selected tweets
     sentiment_selected = sentiment_df_filtered.loc[selected_indices]
+
 
     # Update tweets data for the table
     if filters_at_default:
