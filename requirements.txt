@@ -1,0 +1,9 @@
+sentence-transformers
+umap-learn
+plotly
+nltk
+scikit-learn
+minisom
+dash
+dash-bootstrap-components
+vaderSentiment

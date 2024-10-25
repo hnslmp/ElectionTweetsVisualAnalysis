@@ -30,7 +30,7 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
-import dash_table
+from dash import dash_table
 from dash.exceptions import PreventUpdate
 import plotly.io as pio  # For figure serialization/deserialization
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -312,6 +312,8 @@ coords_normalized[:, 1] /= som_grid_size
 vis_df_som = pd.DataFrame({
     'x': coords_normalized[:, 0],
     'y': coords_normalized[:, 1],
+    'som_x': coords[:, 0],
+    'som_y': coords[:, 1],
     'tweet': tweets_cleaned,
     'engagement': df['engagement'],
     'engagement_log': df['engagement_log'],
@@ -343,18 +345,34 @@ for _, row in grouped.iterrows():
 # ------------------- Create 3D U-Matrix Heatmap -------------------
 
 # Convert distance_map_df to NumPy array
-z_data = 1 - distance_map_df.values
-z_data_original = distance_map_df.values
+z_data_original = 1 - distance_map_df.values
+# z_data_original = distance_map_df.values
+
+
+# Initialize total_engagement_map with zeros, same shape as distance_map
+total_engagement_map = np.zeros_like(distance_map)
+
+# Iterate through each grid cell and sum engagements
+for (x, y), indices in grid_to_tweets.items():
+    # Sum engagement for all tweets in the current cell
+    total_engagement = df.loc[indices, 'engagement'].sum()
+    total_engagement_map[y, x] = total_engagement  # Note: y corresponds to rows, x to columns
+
+# Optionally, normalize or scale the total_engagement_map if needed
+# For example, you can apply a logarithmic scale to handle skewed data
+total_engagement_map_log = np.log1p(total_engagement_map)
+
+z_data = total_engagement_map
 
 # Create the 3D surface plot
 surface = go.Surface(
     z=z_data,
     x=list(range(z_data.shape[1])),  # SOM X-axis
     y=list(range(z_data.shape[0])),  # SOM Y-axis
+    surfacecolor=z_data_original,
     colorscale='YlOrRd_r',  # Choose a perceptually uniform colorscale
     colorbar=dict(title='Distance'),
-    hovertemplate='SOM X: %{x}<br>SOM Y: %{y}<br>Distance: %{customdata:.4f}<extra></extra>',
-    customdata=z_data_original
+    hovertemplate='SOM X: %{x}<br>SOM Y: %{y}<br>Distance: %{customdata:.4f}<extra></extra>'
 )
 
 # Define the layout for the 3D plot
@@ -383,7 +401,7 @@ heatmap = go.Heatmap(
     x=list(range(distance_map_df.shape[1])),
     y=list(range(distance_map_df.shape[0])),
     colorscale='YlOrRd',  # Choose a clear colorscale
-    colorbar=dict(title='Distance'),
+    colorbar=dict(title='Engagement'),
     hoverinfo='text',
     hovertemplate='<b>SOM X: %{x}</b><br><b>SOM Y: %{y}</b><br>Distance: %{z}<extra></extra>'
 )
@@ -423,24 +441,60 @@ fig_distance_map.update_layout(
 
 # Initialize the Dash app with a Bootstrap theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-app.title = "Interactive Tweet Visualization"
+app.title = "Campaign Insights Dashboard"
 
 # ------------------- Dash App Layout -------------------
 
 app.layout = dbc.Container([
-    # Hidden Stores to keep track of selected cells, dates, and base distance maps
+
     dcc.Store(id='selected-cells-store', data=[]),
     dcc.Store(id='base-distance-map-2d', data=fig_distance_map.to_json()),
     dcc.Store(id='base-distance-map-3d', data=fig_3d.to_json()),
-    dcc.Store(id='selected-dates-store', data={'start_date': df['date'].min().isoformat(),
-                                               'end_date': df['date'].max().isoformat()}),
+    dcc.Store(id='selected-dates-store', data={
+        'start_date': df['date'].min().isoformat(),
+        'end_date': df['date'].max().isoformat()
+    }),
     
-    # Title Row
+
+
     dbc.Row([
-        dbc.Col(html.H1("Interactive Tweet Visualization with SOM, t-SNE, UMAP, and 3D U-Matrix", className='text-center mb-4'), width=12)
+        dbc.Col(
+            html.H1(
+                "Campaign Insights Dashboard: Thematic and Sentiment Analysis of Clinton vs Trump 2016 Election Tweets",
+                className='text-center mb-4'
+            ),
+            width=12
+        )
     ]),
-    
-    # Date Picker for filtering by date
+
+    dbc.Row([
+        dbc.Col(
+            html.H3(
+                "COMP5048/4448 Assignment 2",
+                className='text-center mb-4'
+            ),
+            width=12
+        )
+    ]),
+    dbc.Row([
+        dbc.Col(
+            dbc.Label("Hansel Matthew"),
+            xs=12, sm=6, md=3, lg=3, xl=3
+        ),
+        dbc.Col(
+            dbc.Label("Tivensandro"),
+            xs=12, sm=6, md=3, lg=3, xl=3
+        ),
+        dbc.Col(
+            dbc.Label("Group Member 3"),
+            xs=12, sm=6, md=3, lg=3, xl=3
+        ),
+        dbc.Col(
+            dbc.Label("Group Member 4"),
+            xs=12, sm=6, md=3, lg=3, xl=3
+        ),
+    ], className='text-center mb-4'),
+
     dbc.Row([
         dbc.Col([
             html.Label("Select Date Range:"),
@@ -450,52 +504,60 @@ app.layout = dbc.Container([
                 max_date_allowed=df['date'].max(),
                 start_date=df['date'].min(),
                 end_date=df['date'].max(),
-                display_format='YYYY-MM-DD'
-            ),
-            dbc.Button(
-                "Reset Date Filter",
-                id='reset-date-filter-button',
-                color='secondary',
-                className='ml-2',
-                n_clicks=0
+                display_format='YYYY-MM-DD',
+                style={'width': '100%'}
             )
-        ], width=12, className='mb-4')
-    ]),
+        ], xs=12, sm=12, md=8, lg=8, xl=8),
+        dbc.Col([
+            dbc.ButtonGroup([
+                dbc.Button(
+                    "Reset Date Filter",
+                    id='reset-date-filter-button',
+                    color='secondary',
+                    className='mr-2',
+                    n_clicks=0
+                ),
+                dbc.Button(
+                    "Clear SOM Selection",
+                    id='clear-selection-button',
+                    color='danger',
+                    n_clicks=0
+                )
+            ], className='mt-4 mt-md-0')
+        ], xs=12, sm=12, md=4, lg=4, xl=4, className='text-md-right text-center mt-4 mt-md-0')
+    ], className='mb-4', align='center'),
     
-    # Distance Maps and Clear Selection Button
+    # Distance Maps Row
     dbc.Row([
         dbc.Col([
-            dcc.Graph(
-                id='distance-map-2d',
-                figure=fig_distance_map,
-                config={'displayModeBar': False},
-                style={'height': '1000px'}
-            )
-        ], width=6),
+            dbc.Card([
+                dbc.CardHeader("2D Distance Map (U-Matrix)"),
+                dbc.CardBody([
+                    dcc.Graph(
+                        id='distance-map-2d',
+                        figure=fig_distance_map,
+                        config={'displayModeBar': False},
+                        style={'width': '100%', 'height': '1200px'}  # Increased height from 1000px to 1200px
+                    )
+                ], style={'padding': '0'})
+            ], className='h-100')
+        ], xs=12, sm=12, md=12, lg=6, xl=6, className='mb-4'),
         dbc.Col([
-            dcc.Graph(
-                id='distance-map-3d',
-                figure=fig_3d,
-                config={'displayModeBar': False},
-                style={'height': '600px'}
-            )
-        ], width=6),
-    ]),
+            dbc.Card([
+                dbc.CardHeader("3D Engagement Map"),
+                dbc.CardBody([
+                    dcc.Graph(
+                        id='distance-map-3d',
+                        figure=fig_3d,
+                        config={'displayModeBar': False},
+                        style={'width': '100%', 'height': '600px'}
+                    )
+                ], style={'padding': '0'})
+            ], className='h-100')
+        ], xs=12, sm=12, md=12, lg=6, xl=6, className='mb-4'),
+    ], className='mb-4'),
     
-    # Clear Selection Button
-    dbc.Row([
-        dbc.Col([
-            dbc.Button(
-                "Clear SOM Selection",
-                id='clear-selection-button',
-                color='danger',
-                className='mt-3',
-                n_clicks=0
-            )
-        ], width=12, className='text-center')
-    ]),
-    
-    # Visualization Plots
+    # Visualization Plots: t-SNE and UMAP
     dbc.Row([
         dbc.Col([
             dbc.Card([
@@ -513,11 +575,11 @@ app.layout = dbc.Container([
                             height=600
                         ),
                         config={'displayModeBar': False},
-                        style={'height': '600px'}
+                        style={'width': '100%', 'height': '100%'}
                     )
-                ])
-            ], style={'height': '620px'})
-        ], width=3),
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], xs=12, sm=12, md=6, lg=6, xl=6, className='mb-4'),
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader("UMAP Visualization (Log Engagement)"),
@@ -534,14 +596,14 @@ app.layout = dbc.Container([
                             height=600
                         ),
                         config={'displayModeBar': False},
-                        style={'height': '600px'}
+                        style={'width': '100%', 'height': '100%'}
                     )
-                ])
-            ], style={'height': '620px'})
-        ], width=3),
-    ]),
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], xs=12, sm=12, md=6, lg=6, xl=6, className='mb-4'),
+    ], className='mb-4'),
     
-    # Horizontal Word Frequency Bar Chart
+    # Word Frequency Bar Chart Row
     dbc.Row([
         dbc.Col([
             dbc.Card([
@@ -551,14 +613,14 @@ app.layout = dbc.Container([
                         id='word-frequency-chart',
                         figure={},  # Initially empty
                         config={'displayModeBar': False},
-                        style={'height': '400px'}
+                        style={'width': '100%', 'height': '400px'}
                     )
-                ])
-            ], style={'height': '420px'})
-        ], width=12)
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
     ], className='mb-4'),
-    
-    # Engagement Box Plot
+        
+    # Engagement Box Plot Row
     dbc.Row([
         dbc.Col([
             dbc.Card([
@@ -568,81 +630,105 @@ app.layout = dbc.Container([
                         id='engagement-boxplot',
                         figure={},  # Initially empty
                         config={'displayModeBar': False},
-                        style={'height': '400px'}
+                        style={'width': '100%', 'height': '500px'}
                     )
-                ])
-            ], style={'height': '420px'})
-        ], width=12)
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
     ], className='mb-4'),
     
-    # Selected Cell Information
-    dbc.Row([
-        dbc.Col(html.Div(id='selected-cell', style={'textAlign': 'center', 'fontSize': 20, 'marginTop': '20px'}), width=12)
-    ]),
-    
-    # Tweets Table
+    # Sentiment Scatter Plot Row
     dbc.Row([
         dbc.Col([
-            html.H4("Tweets in Selected Cells"),
-            dash_table.DataTable(
-                id='tweets-table',
-                columns=[
-                    {"name": "Tweet", "id": "tweet"},
-                    {"name": "Engagement", "id": "engagement"},
-                    {"name": "Log Engagement", "id": "engagement_log"}
-                ],
-                data=[],
-                style_table={'overflowX': 'auto'},
-                style_cell={
-                    'textAlign': 'left',
-                    'padding': '5px',
-                    'whiteSpace': 'normal',
-                    'height': 'auto',
-                },
-                style_header={
-                    'backgroundColor': 'rgb(230, 230, 230)',
-                    'fontWeight': 'bold'
-                }
-            )
+            dbc.Card([
+                dbc.CardHeader("Sentiment Scatter Plot"),
+                dbc.CardBody([
+                    dcc.Graph(
+                        id='sentiment-scatter-plot',
+                        figure={},  # Initially empty; will be updated via callback
+                        config={'displayModeBar': False},
+                        style={'width': '100%', 'height': '500px'}
+                    )
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
+    ], className='mb-4'),
+    
+    # Line Charts Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Average Polarity Over Time by Handle"),
+                dbc.CardBody([
+                    dcc.Graph(
+                        id='polarity-line-chart',
+                        figure={},  # Initially empty; will be updated via callback
+                        config={'displayModeBar': False},
+                        style={'width': '100%', 'height': '500px'}
+                    )
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], width=12),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Average Polarity Over Time (Overall)"),
+                dbc.CardBody([
+                    dcc.Graph(
+                        id='polarity-line-chart-overall',
+                        figure={},  # Initially empty; will be updated via callback
+                        config={'displayModeBar': False},
+                        style={'width': '100%', 'height': '500px'}
+                    )
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], width=12),
+    ]),
+    
+    # Tweets Table Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Tweets in Selected Cells"),
+                dbc.CardBody([
+                    dash_table.DataTable(
+                        id='tweets-table',
+                        columns=[
+                            {"name": "Tweet", "id": "tweet"},
+                            {"name": "Engagement", "id": "engagement"},
+                            {"name": "Log Engagement", "id": "engagement_log"}
+                        ],
+                        data=[],
+                        style_table={'overflowX': 'auto'},
+                        style_cell={
+                            'textAlign': 'left',
+                            'padding': '5px',
+                            'whiteSpace': 'normal',
+                            'height': 'auto',
+                        },
+                        style_header={
+                            'backgroundColor': 'rgb(230, 230, 230)',
+                            'fontWeight': 'bold'
+                        }
+                    )
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
         ], width=12)
     ]),
     
-    # Sentiment Scatter Plot
+    # Selected Cell Information Row
     dbc.Row([
-        dbc.Col([
-            dcc.Graph(
-                id='sentiment-scatter-plot',
-                figure={},  # Initially empty; will be updated via callback
-                config={'displayModeBar': False},
-                style={'height': '500px'}
-            )
-        ], width=12),
-    ]),
+        dbc.Col(
+            html.Div(
+                id='selected-cell',
+                style={'textAlign': 'center', 'fontSize': '1.25rem', 'marginTop': '20px'}
+            ),
+            width=12
+        )
+    ], className='mb-4'),
     
-    # Line Chart for Average Polarity over Time by Handle
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(
-                id='polarity-line-chart',
-                figure={},  # Initially empty; will be updated via callback
-                config={'displayModeBar': False},
-                style={'height': '500px'}
-            )
-        ], width=12),
-    ]),
-    
-    # Line Chart for Average Polarity over Time (Overall)
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(
-                id='polarity-line-chart-overall',
-                figure={},  # Initially empty; will be updated via callback
-                config={'displayModeBar': False},
-                style={'height': '500px'}
-            )
-        ], width=12),
-    ]),
 ], fluid=True)
+
+
 
 # ------------------- Callbacks for Interactivity -------------------
 
@@ -655,7 +741,6 @@ app.layout = dbc.Container([
         Output('distance-map-2d', 'figure'),
         Output('distance-map-3d', 'figure'),
         Output('word-frequency-chart', 'figure'),
-        Output('engagement-boxplot', 'figure'),
         Output('sentiment-scatter-plot', 'figure'),
         Output('polarity-line-chart', 'figure'),
         Output('polarity-line-chart-overall', 'figure'),
@@ -702,37 +787,14 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     sentiment_df_filtered = sentiment_df[date_mask]
     vis_df_tsne_filtered = vis_df_tsne[date_mask]
     vis_df_umap_filtered = vis_df_umap[date_mask]
+    vis_df_som_filtered = vis_df_som[date_mask]
     
-    # -------------------- Adjustment Starts Here --------------------
-
     # Determine whether filters are at default (full date range and no SOM selection)
     date_min = df['date'].min()
     date_max = df['date'].max()
     start_date_default = start_date == date_min
     end_date_default = end_date == date_max
     filters_at_default = start_date_default and end_date_default and not selected_cells
-
-    # Handle case when no data is available after filtering or filters are at default
-    if df_filtered.empty or filters_at_default:
-        selected_cell_text = "No data available for the selected date range."
-        tweets_data = []
-
-        # Empty plots
-        empty_fig = go.Figure()
-        empty_fig.add_annotation(
-            text="No data available.",
-            showarrow=False,
-            xref="paper",
-            yref="paper",
-            x=0.5,
-            y=0.5,
-            font=dict(size=20)
-        )
-
-        return empty_fig, empty_fig, selected_cell_text, tweets_data, \
-               base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, selected_dates_store
-
-    # -------------------- Adjustment Ends Here --------------------
 
     # Determine selected indices based on selected cells
     if selected_cells:
@@ -744,15 +806,54 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     else:
         # If no cells are selected, use all indices in the date range
         selected_indices = df_filtered.index.tolist()
-    
+
     # Filter sentiment data for selected tweets
     sentiment_selected = sentiment_df_filtered.loc[selected_indices]
-    
+
     # Update tweets data for the table
-    tweets_data_df = df_filtered.loc[selected_indices, ['text', 'engagement', 'engagement_log']]
-    tweets_data_df.rename(columns={'text': 'tweet'}, inplace=True)
-    tweets_data = tweets_data_df.to_dict('records')
-    
+    if filters_at_default:
+        # No filters applied; do not show tweets
+        tweets_data = []
+        selected_cell_text = html.Div([
+            html.P("No tweets selected. Please select a date range or SOM cells.")
+        ])
+    else:
+        tweets_data_df = df_filtered.loc[selected_indices, ['text', 'engagement', 'engagement_log']]
+        tweets_data_df.rename(columns={'text': 'tweet'}, inplace=True)
+        tweets_data = tweets_data_df.to_dict('records')
+        
+        # Aggregate selected cell information
+        if selected_cells:
+            total_engagement = df_filtered.loc[selected_indices, 'engagement'].sum()
+            average_engagement = df_filtered.loc[selected_indices, 'engagement'].mean()
+            selected_cell_text = html.Div([
+                html.P(f"Selected SOM Cells: {len(selected_cells)}"),
+                html.P(f"Cells: {selected_cells}"),
+                html.P(f"Number of Tweets: {len(selected_indices)}"),
+                html.P(f"Total Engagement: {int(total_engagement)}"),
+                html.P(f"Average Engagement: {average_engagement:.2f}")
+            ])
+        else:
+            selected_cell_text = html.Div([
+                html.P(f"Number of Tweets in Date Range: {len(df_filtered)}")
+            ])
+
+    # Handle case when no data is available after filtering
+    if df_filtered.empty or not selected_indices:
+        # Create empty plots with a message
+        empty_fig = go.Figure()
+        empty_fig.add_annotation(
+            text="No data available.",
+            showarrow=False,
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            font=dict(size=20)
+        )
+        return empty_fig, empty_fig, selected_cell_text, tweets_data, \
+               base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, selected_dates_store
+
     # Create sentiment scatter plot for selected tweets
     sentiment_plot = px.scatter(
         sentiment_selected,
@@ -763,16 +864,16 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         labels={'Sentiment Score': 'Sentiment Polarity', 'Engagement': 'Total Engagement'}
     )
     sentiment_plot.update_layout(template="plotly_white")
-    
+
     # Create line chart for selected data (by Handle)
     if not sentiment_selected.empty:
         # Ensure 'Date' column has valid dates
         if sentiment_selected['Date'].isna().any():
             sentiment_selected = sentiment_selected.dropna(subset=['Date'])
-    
+
         sentiment_time_series = sentiment_selected.groupby(['Date', 'Handle'])['Sentiment Score'].mean().unstack()
         sentiment_time_series = sentiment_time_series.replace(0, np.nan)
-    
+
         fig_line = go.Figure()
         for handle in sentiment_time_series.columns:
             fig_line.add_trace(
@@ -791,10 +892,10 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             hovermode='x',
             template='plotly_white'
         )
-    
+
         # Create overall line chart for selected data
         sentiment_overall_time_series = sentiment_selected.groupby('Date')['Sentiment Score'].mean()
-    
+
         fig_line_overall = go.Figure()
         fig_line_overall.add_trace(
             go.Scatter(
@@ -813,8 +914,8 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         )
     else:
         # If no data, create empty figures
-        fig_line = go.Figure()
-        fig_line.add_annotation(
+        empty_fig = go.Figure()
+        empty_fig.add_annotation(
             text="No data available.",
             showarrow=False,
             xref="paper",
@@ -823,18 +924,9 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             y=0.5,
             font=dict(size=20)
         )
-    
-        fig_line_overall = go.Figure()
-        fig_line_overall.add_annotation(
-            text="No data available.",
-            showarrow=False,
-            xref="paper",
-            yref="paper",
-            x=0.5,
-            y=0.5,
-            font=dict(size=20)
-        )
-    
+        fig_line = empty_fig
+        fig_line_overall = empty_fig
+
     # Update t-SNE plot
     mask_tsne = vis_df_tsne_filtered.index.isin(selected_indices)
     fig_tsne = px.scatter(
@@ -869,7 +961,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         )
     else:
         fig_tsne.update_traces(marker=dict(opacity=1.0))
-    
+
     # Update UMAP plot
     mask_umap = vis_df_umap_filtered.index.isin(selected_indices)
     fig_umap = px.scatter(
@@ -904,24 +996,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         )
     else:
         fig_umap.update_traces(marker=dict(opacity=1.0))
-    
-    # Aggregate selected cell information
-    if selected_cells:
-        total_engagement = df_filtered.loc[selected_indices, 'engagement'].sum()
-        average_engagement = df_filtered.loc[selected_indices, 'engagement'].mean()
-        selected_cell_text = html.Div([
-            html.P(f"Selected SOM Cells: {len(selected_cells)}"),
-            html.P(f"Cells: {selected_cells}"),
-            html.P(f"Number of Tweets: {len(selected_indices)}"),
-            html.P(f"Total Engagement: {int(total_engagement)}"),
-            html.P(f"Average Engagement: {average_engagement:.2f}")
-        ])
-    else:
-        selected_cell_text = html.Div([
-            html.P("No cells selected."),
-            html.P(f"Number of Tweets in Date Range: {len(df_filtered)}")
-        ])
-    
+
     # Update distance-map-2d with selected cells highlighted in black
     fig_distance_map_2d = base_distance_map_2d
     if selected_cells:
@@ -943,7 +1018,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                 text=[f"SOM X: {x}, SOM Y: {y}" for x, y in zip(selected_x, selected_y)]
             )
         )
-    
+
     # Update distance-map-3d with selected cells highlighted in black
     fig_distance_map_3d = base_distance_map_3d
     if selected_cells:
@@ -967,19 +1042,19 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                       for (x, y), distance in zip(selected_cells, selected_z)]
             )
         )
-    
+
     # ------------------- Generate Horizontal Word Frequency Bar Chart -------------------
-    
-    if not tweets_data_df.empty:
+
+    if not filters_at_default and not tweets_data_df.empty:
         # Extract all words from selected tweets
         all_words = ' '.join(tweets_data_df['tweet']).split()
-    
+
         # Count word frequencies
         word_counts = Counter(all_words)
-    
+
         # Get the top 20 words
         top_words = word_counts.most_common(20)
-    
+
         if top_words:
             words, counts = zip(*top_words)
             # Create the horizontal bar chart
@@ -1037,69 +1112,10 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
-    
-    # ------------------- Generate Engagement Box Plot -------------------
-    
-    if not tweets_data_df.empty:
-        # Extract engagement data from selected tweets
-        selected_engagement = tweets_data_df['engagement']
-    
-        if not selected_engagement.empty:
-            # Create the box plot
-            fig_box = px.box(
-                y=selected_engagement,
-                labels={'y': 'Engagement'},
-                title='Engagement Distribution of Selected Tweets',
-                points='outliers'  # Show outliers
-            )
-            fig_box.update_layout(
-                plot_bgcolor='white',
-                margin=dict(l=100, r=50, t=50, b=50)
-            )
-        else:
-            # If no engagement data is present
-            fig_box = go.Figure()
-            fig_box.add_annotation(
-                dict(
-                    text="No engagement data to display.",
-                    showarrow=False,
-                    xref="paper",
-                    yref="paper",
-                    x=0.5,
-                    y=0.5,
-                    font=dict(size=20)
-                )
-            )
-            fig_box.update_layout(
-                xaxis=dict(showticklabels=False),
-                yaxis=dict(showticklabels=False),
-                plot_bgcolor='white',
-                paper_bgcolor='white'
-            )
-    else:
-        # If no tweets are selected, display an empty box plot with a message
-        fig_box = go.Figure()
-        fig_box.add_annotation(
-            dict(
-                text="No data available.",
-                showarrow=False,
-                xref="paper",
-                yref="paper",
-                x=0.5,
-                y=0.5,
-                font=dict(size=20)
-            )
-        )
-        fig_box.update_layout(
-            xaxis=dict(showticklabels=False),
-            yaxis=dict(showticklabels=False),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-    
+
     # Return all plots and data along with the updated selected_dates_store
     return fig_tsne, fig_umap, selected_cell_text, tweets_data, \
-           fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, fig_box, sentiment_plot, fig_line, fig_line_overall, selected_dates_store
+           fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, sentiment_plot, fig_line, fig_line_overall, selected_dates_store
 
 @app.callback(
     [
@@ -1135,17 +1151,14 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, clear_clicks, res
     end_date = pd.to_datetime(selected_dates_store['end_date']).date()
 
     if triggered_id == 'clear-selection-button':
-        # Reset selected cells and date picker to full range
+        # Reset selected cells
         selected_cells = []
-        start_date = df['date'].min()
-        end_date = df['date'].max()
         return selected_cells, start_date, end_date
 
     elif triggered_id == 'reset-date-filter-button':
         # Reset date picker to full range
         start_date = df['date'].min()
         end_date = df['date'].max()
-        # Optionally, you can decide whether to reset selected_cells or keep them
         return selected_cells, start_date, end_date
 
     elif triggered_id == 'distance-map-2d' or triggered_id == 'distance-map-3d':
