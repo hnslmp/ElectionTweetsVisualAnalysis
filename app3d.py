@@ -314,8 +314,6 @@ vis_df_som = pd.DataFrame({
     'y': coords_normalized[:, 1],
     'som_x': coords[:, 0],
     'som_y': coords[:, 1],
-    'som_x': coords[:, 0],
-    'som_y': coords[:, 1],
     'tweet': tweets_cleaned,
     'engagement': df['engagement'],
     'engagement_log': df['engagement_log'],
@@ -456,7 +454,7 @@ app.layout = dbc.Container([
         'start_date': df['date'].min().isoformat(),
         'end_date': df['date'].max().isoformat()
     }),
-    
+
 
 
     dbc.Row([
@@ -511,21 +509,13 @@ app.layout = dbc.Container([
             )
         ], xs=12, sm=12, md=8, lg=8, xl=8),
         dbc.Col([
-            dbc.ButtonGroup([
-                dbc.Button(
-                    "Reset Date Filter",
-                    id='reset-date-filter-button',
-                    color='secondary',
-                    className='mr-2',
-                    n_clicks=0
-                ),
-                dbc.Button(
-                    "Clear SOM Selection",
-                    id='clear-selection-button',
-                    color='danger',
-                    n_clicks=0
-                )
-            ], className='mt-4 mt-md-0')
+            dbc.Button(
+                "Reset All",
+                id='reset-all-button',
+                color='warning',
+                className='mt-4 mt-md-0',
+                n_clicks=0
+            )
         ], xs=12, sm=12, md=4, lg=4, xl=4, className='text-md-right text-center mt-4 mt-md-0')
     ], className='mb-4', align='center'),
     
@@ -656,11 +646,11 @@ app.layout = dbc.Container([
         ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
     ], className='mb-4'),
     
-    # Line Charts Row
+    # Line Charts Row (Merged into one)
     dbc.Row([
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader("Average Polarity Over Time by Handle"),
+                dbc.CardHeader("Average Polarity Over Time"),
                 dbc.CardBody([
                     dcc.Graph(
                         id='polarity-line-chart',
@@ -671,21 +661,8 @@ app.layout = dbc.Container([
                 ], style={'padding': '0'})
             ], className='h-100 mb-4')
         ], width=12),
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader("Average Polarity Over Time (Overall)"),
-                dbc.CardBody([
-                    dcc.Graph(
-                        id='polarity-line-chart-overall',
-                        figure={},  # Initially empty; will be updated via callback
-                        config={'displayModeBar': False},
-                        style={'width': '100%', 'height': '500px'}
-                    )
-                ], style={'padding': '0'})
-            ], className='h-100 mb-4')
-        ], width=12),
     ]),
-    
+
     # Tweets Table Row
     dbc.Row([
         dbc.Col([
@@ -745,8 +722,7 @@ app.layout = dbc.Container([
         Output('word-frequency-chart', 'figure'),
         Output('sentiment-scatter-plot', 'figure'),
         Output('polarity-line-chart', 'figure'),
-        Output('polarity-line-chart-overall', 'figure'),
-        Output('selected-dates-store', 'data')  # Store to update selected dates
+        Output('selected-dates-store', 'data')  # Removed 'polarity-line-chart-overall' Output
     ],
     [
         Input('selected-cells-store', 'data'),
@@ -855,7 +831,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             font=dict(size=20)
         )
         return empty_fig, empty_fig, selected_cell_text, tweets_data, \
-               base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, selected_dates_store
+               base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, selected_dates_store
 
     # Create sentiment scatter plot for selected tweets
     sentiment_plot = px.scatter(
@@ -868,57 +844,58 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     )
     sentiment_plot.update_layout(template="plotly_white")
 
-    # Create line chart for selected data (by Handle)
+    # Create line chart for selected data (by Handle and Overall)
     if not sentiment_selected.empty:
         # Ensure 'Date' column has valid dates
         if sentiment_selected['Date'].isna().any():
             sentiment_selected = sentiment_selected.dropna(subset=['Date'])
 
+        # Group by Date and Handle for per-handle sentiment
         sentiment_time_series = sentiment_selected.groupby(['Date', 'Handle'])['Sentiment Score'].mean().unstack()
         sentiment_time_series = sentiment_time_series.replace(0, np.nan)
 
+        # Initialize the figure
         fig_line = go.Figure()
+
+        # Add per-handle sentiment lines
         for handle in sentiment_time_series.columns:
             fig_line.add_trace(
                 go.Scatter(
                     x=sentiment_time_series.index,  # Dates
                     y=sentiment_time_series[handle],  # Average sentiment score for each handle
                     mode='lines+markers',  # Add markers to make single data points visible
-                    name=handle
+                    name=f"{handle} Sentiment"
                 )
             )
-        fig_line.update_layout(
-            title='Average Sentiment Analysis Over Time by Handle (Filtered Data)',
-            xaxis_title='Date',
-            yaxis_title='Average Sentiment Score',
-            legend_title='Handles',
-            hovermode='x',
-            template='plotly_white'
-        )
 
-        # Create overall line chart for selected data
+        # Calculate overall sentiment
         sentiment_overall_time_series = sentiment_selected.groupby('Date')['Sentiment Score'].mean()
 
-        fig_line_overall = go.Figure()
-        fig_line_overall.add_trace(
+        # Add overall sentiment line
+        fig_line.add_trace(
             go.Scatter(
                 x=sentiment_overall_time_series.index,
                 y=sentiment_overall_time_series.values,
                 mode='lines+markers',
-                name='Overall Sentiment'
+                name='Overall Sentiment',
+                line=dict(width=4, dash='dash')  # Different style for distinction
             )
         )
-        fig_line_overall.update_layout(
-            title='Average Sentiment Analysis Over Time (Filtered Data)',
+
+        # Update the layout of the combined figure
+        fig_line.update_layout(
+            title='Average Sentiment Analysis Over Time (By Handle and Overall)',
             xaxis_title='Date',
             yaxis_title='Average Sentiment Score',
-            hovermode='x',
+            legend_title='Handles',
+            hovermode='x unified',
             template='plotly_white'
         )
+
     else:
-        # If no data, create empty figures
-        empty_fig = go.Figure()
-        empty_fig.add_annotation(
+        # If no data, create empty figure with a message
+        fig_line = go.Figure()
+        fig_line.add_annotation(
             text="No data available.",
             showarrow=False,
             xref="paper",
@@ -927,8 +904,12 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             y=0.5,
             font=dict(size=20)
         )
-        fig_line = empty_fig
-        fig_line_overall = empty_fig
+        fig_line.update_layout(
+            xaxis=dict(showticklabels=False),
+            yaxis=dict(showticklabels=False),
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
 
     # Update t-SNE plot
     mask_tsne = vis_df_tsne_filtered.index.isin(selected_indices)
@@ -1118,7 +1099,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
 
     # Return all plots and data along with the updated selected_dates_store
     return fig_tsne, fig_umap, selected_cell_text, tweets_data, \
-           fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, sentiment_plot, fig_line, fig_line_overall, selected_dates_store
+           fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, sentiment_plot, fig_line, selected_dates_store
 
 @app.callback(
     [
@@ -1129,15 +1110,14 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     [
         Input('distance-map-2d', 'clickData'),
         Input('distance-map-3d', 'clickData'),
-        Input('clear-selection-button', 'n_clicks'),
-        Input('reset-date-filter-button', 'n_clicks')
+        Input('reset-all-button', 'n_clicks')
     ],
     [
         State('selected-cells-store', 'data'),
         State('selected-dates-store', 'data')
     ]
 )
-def update_selected_cells_and_date(clickData_2d, clickData_3d, clear_clicks, reset_date_clicks, selected_cells, selected_dates_store):
+def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks, selected_cells, selected_dates_store):
     """
     Updates the list of selected cells and the date picker based on user interactions.
     Handles clearing selections and resetting the date filter.
@@ -1153,12 +1133,9 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, clear_clicks, res
     start_date = pd.to_datetime(selected_dates_store['start_date']).date()
     end_date = pd.to_datetime(selected_dates_store['end_date']).date()
 
-    if triggered_id == 'clear-selection-button':
+    if triggered_id == 'reset-all-button':
         # Reset selected cells
         selected_cells = []
-        return selected_cells, start_date, end_date
-
-    elif triggered_id == 'reset-date-filter-button':
         # Reset date picker to full range
         start_date = df['date'].min()
         end_date = df['date'].max()
