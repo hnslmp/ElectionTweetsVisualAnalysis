@@ -381,7 +381,7 @@ layout_3d = go.Layout(
     scene=dict(
         xaxis_title='SOM X',
         yaxis_title='SOM Y',
-        zaxis_title='Distance',
+        zaxis_title='Engagement',
         camera=dict(
             eye=dict(x=1.5, y=1.5, z=1.5)  # Adjust the camera angle as needed
         )
@@ -401,7 +401,7 @@ heatmap = go.Heatmap(
     x=list(range(distance_map_df.shape[1])),
     y=list(range(distance_map_df.shape[0])),
     colorscale='YlOrRd',  # Choose a clear colorscale
-    colorbar=dict(title='Engagement'),
+    colorbar=dict(title='Distance'),
     hoverinfo='text',
     hovertemplate='<b>SOM X: %{x}</b><br><b>SOM Y: %{y}</b><br>Distance: %{z}<extra></extra>'
 )
@@ -486,11 +486,11 @@ app.layout = dbc.Container([
             xs=12, sm=6, md=3, lg=3, xl=3
         ),
         dbc.Col(
-            dbc.Label("Group Member 3"),
+            dbc.Label("Taige Liu"),
             xs=12, sm=6, md=3, lg=3, xl=3
         ),
         dbc.Col(
-            dbc.Label("Group Member 4"),
+            dbc.Label("Wenhao Li"),
             xs=12, sm=6, md=3, lg=3, xl=3
         ),
     ], className='text-center mb-4'),
@@ -611,24 +611,7 @@ app.layout = dbc.Container([
             ], className='h-100 mb-4')
         ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
     ], className='mb-4'),
-        
-    # Engagement Box Plot Row
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader("Engagement Distribution of Selected Tweets"),
-                dbc.CardBody([
-                    dcc.Graph(
-                        id='engagement-boxplot',
-                        figure={},  # Initially empty
-                        config={'displayModeBar': False},
-                        style={'width': '100%', 'height': '500px'}
-                    )
-                ], style={'padding': '0'})
-            ], className='h-100 mb-4')
-        ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
-    ], className='mb-4'),
-    
+            
     # Sentiment Scatter Plot Row
     dbc.Row([
         dbc.Col([
