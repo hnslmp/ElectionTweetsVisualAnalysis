@@ -455,8 +455,6 @@ app.layout = dbc.Container([
         'end_date': df['date'].max().isoformat()
     }),
 
-
-
     dbc.Row([
         dbc.Col(
             html.H1(
@@ -657,7 +655,8 @@ app.layout = dbc.Container([
                         columns=[
                             {"name": "Tweet", "id": "tweet"},
                             {"name": "Engagement", "id": "engagement"},
-                            {"name": "Log Engagement", "id": "engagement_log"}
+                            {"name": "Log Engagement", "id": "engagement_log"},
+                            {"name": "Sentiment Score", "id": "Sentiment Score"}  # New Column
                         ],
                         data=[],
                         style_table={'overflowX': 'auto'},
@@ -771,6 +770,10 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     # Filter sentiment data for selected tweets
     sentiment_selected = sentiment_df_filtered.loc[selected_indices]
 
+    # ------------------- **Add Tweet Text to sentiment_selected** -------------------
+    # This allows the tweet text to be used in the hover tooltip of the scatter plot
+    sentiment_selected = sentiment_selected.copy()  # To avoid SettingWithCopyWarning
+    sentiment_selected['tweet'] = df_filtered.loc[selected_indices, 'text'].values
 
     # Update tweets data for the table
     if filters_at_default:
@@ -780,8 +783,12 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             html.P("No tweets selected. Please select a date range or SOM cells.")
         ])
     else:
-        tweets_data_df = df_filtered.loc[selected_indices, ['text', 'engagement', 'engagement_log']]
+        # ------------------- **Add Sentiment Score to the Tweets Table** -------------------
+        # Merge the sentiment score into the tweets data
+        tweets_data_df = df_filtered.loc[selected_indices, ['text', 'engagement', 'engagement_log']].copy()
         tweets_data_df.rename(columns={'text': 'tweet'}, inplace=True)
+        tweets_data_df['Sentiment Score'] = sentiment_selected['Sentiment Score'].values  # Add Sentiment Score
+
         tweets_data = tweets_data_df.to_dict('records')
         
         # Aggregate selected cell information
@@ -823,7 +830,8 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         y='Engagement',
         color='Handle',
         title='Sentiment Polarity vs Total Engagement (Filtered Data)',
-        labels={'Sentiment Score': 'Sentiment Polarity', 'Engagement': 'Total Engagement'}
+        labels={'Sentiment Score': 'Sentiment Polarity', 'Engagement': 'Total Engagement'},
+        hover_data={'tweet': True}  # Enable tweet text in hover
     )
     sentiment_plot.update_layout(template="plotly_white")
 
@@ -1083,9 +1091,10 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             paper_bgcolor='white'
         )
 
-    # Return all plots and data along with the updated selected_dates_store
+    # ------------------- **Return All Updated Figures and Data** -------------------
     return fig_tsne, fig_umap, selected_cell_text, tweets_data, \
            fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, sentiment_plot, fig_line, selected_dates_store
+
 
 @app.callback(
     [
@@ -1168,6 +1177,7 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
     else:
         # If no recognized input triggered the callback, prevent update
         raise PreventUpdate
+
 
 # ------------------- Running the Dash App -------------------
 
