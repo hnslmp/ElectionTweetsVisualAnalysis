@@ -1013,8 +1013,11 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     # ------------------- Generate Horizontal Word Frequency Bar Chart -------------------
 
     if not filters_at_default and not tweets_data_df.empty:
-        # Extract all words from selected tweets
-        all_words = ' '.join(tweets_data_df['tweet']).split()
+        # Get the cleaned tweets corresponding to selected indices
+        tweets_cleaned_selected = tweets_cleaned.loc[selected_indices]
+
+        # Extract all words from selected cleaned tweets
+        all_words = ' '.join(tweets_cleaned_selected).split()
 
         # Count word frequencies
         word_counts = Counter(all_words)
