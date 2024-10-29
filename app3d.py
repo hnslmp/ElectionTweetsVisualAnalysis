@@ -1023,7 +1023,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         word_counts = Counter(all_words)
 
         # Get the top 20 words
-        top_words = word_counts.most_common(20)
+        top_words = word_counts.most_common(40)
 
         if top_words:
             words, counts = zip(*top_words)
