@@ -675,7 +675,7 @@ app.layout = dbc.Container([
             ], className='h-100 mb-4')
         ], width=12)
     ]),
-    
+
     # Selected Cell Information Row
     dbc.Row([
         dbc.Col(
@@ -726,7 +726,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     base_distance_map_3d = pio.from_json(base_distance_map_3d_json)
     
     ctx = dash.callback_context
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
     
     # Convert start_date and end_date to datetime.date objects
     if start_date is not None:
@@ -1105,17 +1105,21 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     [
         Input('distance-map-2d', 'clickData'),
         Input('distance-map-3d', 'clickData'),
-        Input('reset-all-button', 'n_clicks')
+        Input('reset-all-button', 'n_clicks'),
+        # Added Inputs for Date Picker to handle two-way interaction
+        Input('date-picker-range', 'start_date'),
+        Input('date-picker-range', 'end_date')
     ],
     [
         State('selected-cells-store', 'data'),
         State('selected-dates-store', 'data')
     ]
 )
-def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks, selected_cells, selected_dates_store):
+def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks, start_date, end_date, selected_cells, selected_dates_store):
     """
     Updates the list of selected cells and the date picker based on user interactions.
     Handles clearing selections and resetting the date filter.
+    Also handles updating selected cells based on date range changes.
     """
     ctx = dash.callback_context
 
@@ -1125,8 +1129,8 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     # Default start and end dates
-    start_date = pd.to_datetime(selected_dates_store['start_date']).date()
-    end_date = pd.to_datetime(selected_dates_store['end_date']).date()
+    current_start_date = pd.to_datetime(selected_dates_store['start_date']).date()
+    current_end_date = pd.to_datetime(selected_dates_store['end_date']).date()
 
     if triggered_id == 'reset-all-button':
         # Reset selected cells
@@ -1136,7 +1140,7 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
         end_date = df['date'].max()
         return selected_cells, start_date, end_date
 
-    elif triggered_id == 'distance-map-2d' or triggered_id == 'distance-map-3d':
+    elif triggered_id in ['distance-map-2d', 'distance-map-3d']:
         # Determine which distance map was clicked
         if triggered_id == 'distance-map-2d':
             clickData = clickData_2d
@@ -1171,6 +1175,34 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
             # If no dates found, reset to full range
             start_date = df['date'].min()
             end_date = df['date'].max()
+
+        return selected_cells, start_date, end_date
+
+    elif triggered_id in ['date-picker-range']:
+        # When date picker changes, update selected cells based on the new date range
+        # **Small Adjustment Below: Use vis_df_som instead of df to access 'som_x' and 'som_y'**
+
+        # Convert to datetime.date objects
+        if start_date is not None:
+            start = pd.to_datetime(start_date).date()
+        else:
+            start = df['date'].min()
+        if end_date is not None:
+            end = pd.to_datetime(end_date).date()
+        else:
+            end = df['date'].max()
+
+        # **Adjusted Line: Use vis_df_som instead of df**
+        # Original Line:
+        # filtered_tweets = df[(df['date'] >= start) & (df['date'] <= end)]
+        # Adjusted Line:
+        filtered_tweets = vis_df_som[(vis_df_som['date'] >= start) & (vis_df_som['date'] <= end)]
+
+        # Extract unique SOM cell coordinates
+        relevant_cells = filtered_tweets[['som_x', 'som_y']].drop_duplicates().values.tolist()
+
+        # Update selected_cells to be the relevant_cells
+        selected_cells = relevant_cells
 
         return selected_cells, start_date, end_date
 
