@@ -58,7 +58,7 @@ def load_embeddings(filename='embeddings.npy'):
 
 # ------------------- Data Loading and Preprocessing -------------------
 
-# Download NLTK data
+# Download NLTK data (ensure this is done before running the code)
 # nltk.download('stopwords')
 # nltk.download('wordnet')
 # nltk.download('omw-1.4')
@@ -342,12 +342,7 @@ for _, row in grouped.iterrows():
     indices = row['index']
     grid_to_tweets[(x, y)] = indices
 
-# ------------------- Create 3D U-Matrix Heatmap -------------------
-
-# Convert distance_map_df to NumPy array
-z_data_original = 1 - distance_map_df.values
-# z_data_original = distance_map_df.values
-
+# ------------------- Create 3D Engagement Map -------------------
 
 # Initialize total_engagement_map with zeros, same shape as distance_map
 total_engagement_map = np.zeros_like(distance_map)
@@ -362,7 +357,11 @@ for (x, y), indices in grid_to_tweets.items():
 # For example, you can apply a logarithmic scale to handle skewed data
 total_engagement_map_log = np.log1p(total_engagement_map)
 
-z_data = total_engagement_map
+# Use the logarithmic engagement map for z_data to handle large variations
+z_data = total_engagement_map_log
+
+# Convert distance_map_df to NumPy array for surfacecolor
+z_data_original = distance_map_df.values
 
 # Create the 3D surface plot
 surface = go.Surface(
@@ -371,17 +370,20 @@ surface = go.Surface(
     y=list(range(z_data.shape[0])),  # SOM Y-axis
     surfacecolor=z_data_original,
     colorscale='YlOrRd_r',  # Choose a perceptually uniform colorscale
-    colorbar=dict(title='Distance'),
-    hovertemplate='SOM X: %{x}<br>SOM Y: %{y}<br>Distance: %{customdata:.4f}<extra></extra>'
+    colorbar=dict(title='Distance Map Value'),
+    hovertemplate='SOM X: %{x}<br>SOM Y: %{y}<br>Engagement: %{z:.2f}<br>Distance: %{surfacecolor:.4f}<extra></extra>'
 )
 
 # Define the layout for the 3D plot
 layout_3d = go.Layout(
-    title='SOM Distance Map (U-Matrix) - 3D Visualization',
+    title='SOM Engagement Map - 3D Visualization',
     scene=dict(
         xaxis_title='SOM X',
         yaxis_title='SOM Y',
-        zaxis_title='Engagement',
+        zaxis_title='Log Engagement',
+        xaxis=dict(nticks=10),
+        yaxis=dict(nticks=10),
+        zaxis=dict(nticks=5),
         camera=dict(
             eye=dict(x=1.5, y=1.5, z=1.5)  # Adjust the camera angle as needed
         )
@@ -639,9 +641,10 @@ app.layout = dbc.Container([
                         config={'displayModeBar': False},
                         style={'width': '100%', 'height': '500px'}
                     )
-                ], style={'padding': '0'})
-            ])
+                ])
+            ]),
         ]),
+
     ]),
 
     # Tweets Table Row
@@ -704,7 +707,7 @@ app.layout = dbc.Container([
         Output('word-frequency-chart', 'figure'),
         Output('sentiment-scatter-plot', 'figure'),
         Output('polarity-line-chart', 'figure'),
-        Output('selected-dates-store', 'data')  # Removed 'polarity-line-chart-overall' Output
+        Output('selected-dates-store', 'data')
     ],
     [
         Input('selected-cells-store', 'data'),
@@ -952,7 +955,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     )
 
     # Update distance-map-2d with selected cells highlighted in black
-    fig_distance_map_2d = base_distance_map_2d
+    fig_distance_map_2d = go.Figure(base_distance_map_2d)  # Make a copy
     if selected_cells:
         selected_x = [cell[0] for cell in selected_cells]
         selected_y = [cell[1] for cell in selected_cells]
@@ -974,11 +977,11 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         )
 
     # Update distance-map-3d with selected cells highlighted in black
-    fig_distance_map_3d = base_distance_map_3d
+    fig_distance_map_3d = go.Figure(base_distance_map_3d)  # Make a copy
     if selected_cells:
-        selected_z = [distance_map[y, x] for x, y in selected_cells]
         selected_x_3d = [x for x, y in selected_cells]
         selected_y_3d = [y for x, y in selected_cells]
+        selected_z = [z_data[y, x] for x, y in selected_cells]  # Use engagement values (log) for z-coordinate
         fig_distance_map_3d.add_trace(
             go.Scatter3d(
                 x=selected_x_3d,
@@ -992,8 +995,8 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                 ),
                 name='Selected Cells',
                 hoverinfo='text',
-                text=[f"SOM X: {x}, SOM Y: {y}, Distance: {distance_map[y, x]:.2f}"
-                      for (x, y), distance in zip(selected_cells, selected_z)]
+                text=[f"SOM X: {x}, SOM Y: {y}, Log Engagement: {z:.2f}"
+                      for x, y, z in zip(selected_x_3d, selected_y_3d, selected_z)]
             )
         )
 
@@ -1019,7 +1022,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                 y=words,            # Assign words to the y-axis for horizontal bars
                 x=counts,           # Assign counts to the x-axis
                 labels={'x': 'Frequency', 'y': 'Words'},  # Update labels accordingly
-                title='Top 20 Word Frequencies in Selected Tweets',
+                title='Top 40 Word Frequencies in Selected Tweets',
                 color=counts,
                 color_continuous_scale='Viridis',
                 orientation='h'     # Set orientation to horizontal
@@ -1159,7 +1162,6 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
 
     elif triggered_id in ['date-picker-range']:
         # When date picker changes, update selected cells based on the new date range
-        # **Small Adjustment Below: Use vis_df_som instead of df to access 'som_x' and 'som_y'**
 
         # Convert to datetime.date objects
         if start_date is not None:
@@ -1171,7 +1173,7 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
         else:
             end = df['date'].max()
 
-        # **Adjusted Line: Use vis_df_som instead of df**
+        # Use vis_df_som to access 'som_x' and 'som_y'
         filtered_tweets = vis_df_som[(vis_df_som['date'] >= start) & (vis_df_som['date'] <= end)]
 
         # Extract unique SOM cell coordinates
