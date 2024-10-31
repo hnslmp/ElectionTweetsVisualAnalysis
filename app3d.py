@@ -823,7 +823,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         return empty_fig, empty_fig, selected_cell_text, tweets_data, \
                base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, selected_dates_store
 
-    # Create sentiment scatter plot for selected tweets
+    # ------------------- **Update Sentiment Scatter Plot with Color Blind Friendly Colors** -------------------
     sentiment_plot = px.scatter(
         sentiment_selected,
         x='Sentiment Score',
@@ -831,11 +831,13 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         color='Handle',
         title='Sentiment Polarity vs Total Engagement (Filtered Data)',
         labels={'Sentiment Score': 'Sentiment Polarity', 'Engagement': 'Total Engagement'},
-        hover_data={'tweet': True}  # Enable tweet text in hover
+        hover_data={'tweet': True},  # Enable tweet text in hover
+        color_discrete_sequence=px.colors.qualitative.Safe  # Color blind friendly palette
     )
+    sentiment_plot.update_traces(marker=dict(size=10))
     sentiment_plot.update_layout(template="plotly_white")
 
-    # Create line chart for selected data (by Handle and Overall)
+    # ------------------- **Update Polarity Line Chart with Color Blind Friendly Colors** -------------------
     if not sentiment_selected.empty:
         # Ensure 'Date' column has valid dates
         if sentiment_selected['Date'].isna().any():
@@ -848,14 +850,19 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         # Initialize the figure
         fig_line = go.Figure()
 
+        # Define color sequence
+        color_sequence = px.colors.qualitative.Safe
+        num_colors = len(color_sequence)
+
         # Add per-handle sentiment lines
-        for handle in sentiment_time_series.columns:
+        for i, handle in enumerate(sentiment_time_series.columns):
             fig_line.add_trace(
                 go.Scatter(
                     x=sentiment_time_series.index,  # Dates
                     y=sentiment_time_series[handle],  # Average sentiment score for each handle
                     mode='lines+markers',  # Add markers to make single data points visible
-                    name=f"{handle} Sentiment"
+                    name=f"{handle} Sentiment",
+                    line=dict(color=color_sequence[i % num_colors])  # Assign color from Safe palette
                 )
             )
 
@@ -869,7 +876,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                 y=sentiment_overall_time_series.values,
                 mode='lines+markers',
                 name='Overall Sentiment',
-                line=dict(width=4, dash='dash')  # Different style for distinction
+                line=dict(color=color_sequence[-1], width=4, dash='dash')  # Use the last color for distinction
             )
         )
 
