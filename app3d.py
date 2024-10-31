@@ -59,10 +59,10 @@ def load_embeddings(filename='embeddings.npy'):
 # ------------------- Data Loading and Preprocessing -------------------
 
 # Download NLTK data (ensure this is done before running the code)
-# nltk.download('stopwords')
-# nltk.download('wordnet')
-# nltk.download('omw-1.4')
-# nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+nltk.download('punkt')
 
 # Load your data
 df = pd.read_csv('tweets.csv')
@@ -353,12 +353,8 @@ for (x, y), indices in grid_to_tweets.items():
     total_engagement = df.loc[indices, 'engagement'].sum()
     total_engagement_map[y, x] = total_engagement  # Note: y corresponds to rows, x to columns
 
-# Optionally, normalize or scale the total_engagement_map if needed
-# For example, you can apply a logarithmic scale to handle skewed data
-total_engagement_map_log = np.log1p(total_engagement_map)
-
-# Use the logarithmic engagement map for z_data to handle large variations
-z_data = total_engagement_map_log
+# Use the original engagement values for z_data
+z_data = total_engagement_map
 
 # Convert distance_map_df to NumPy array for surfacecolor
 z_data_original = distance_map_df.values
@@ -369,7 +365,7 @@ surface = go.Surface(
     x=list(range(z_data.shape[1])),  # SOM X-axis
     y=list(range(z_data.shape[0])),  # SOM Y-axis
     surfacecolor=z_data_original,
-    colorscale='YlOrRd_r',  # Choose a perceptually uniform colorscale
+    colorscale='YlOrRd',  # Choose a perceptually uniform colorscale
     colorbar=dict(title='Distance Map Value'),
     hovertemplate='SOM X: %{x}<br>SOM Y: %{y}<br>Engagement: %{z:.2f}<br>Distance: %{surfacecolor:.4f}<extra></extra>'
 )
@@ -380,7 +376,7 @@ layout_3d = go.Layout(
     scene=dict(
         xaxis_title='SOM X',
         yaxis_title='SOM Y',
-        zaxis_title='Log Engagement',
+        zaxis_title='Engagement',
         xaxis=dict(nticks=10),
         yaxis=dict(nticks=10),
         zaxis=dict(nticks=5),
@@ -981,7 +977,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     if selected_cells:
         selected_x_3d = [x for x, y in selected_cells]
         selected_y_3d = [y for x, y in selected_cells]
-        selected_z = [z_data[y, x] for x, y in selected_cells]  # Use engagement values (log) for z-coordinate
+        selected_z = [z_data[y, x] for x, y in selected_cells]  # Use original engagement values for z-coordinate
         fig_distance_map_3d.add_trace(
             go.Scatter3d(
                 x=selected_x_3d,
@@ -995,7 +991,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                 ),
                 name='Selected Cells',
                 hoverinfo='text',
-                text=[f"SOM X: {x}, SOM Y: {y}, Log Engagement: {z:.2f}"
+                text=[f"SOM X: {x}, SOM Y: {y}, Engagement: {z:.2f}"
                       for x, y, z in zip(selected_x_3d, selected_y_3d, selected_z)]
             )
         )
@@ -1012,7 +1008,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         # Count word frequencies
         word_counts = Counter(all_words)
 
-        # Get the top 20 words
+        # Get the top 40 words
         top_words = word_counts.most_common(40)
 
         if top_words:
