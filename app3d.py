@@ -9,6 +9,7 @@
 # !pip install dash
 # !pip install dash-bootstrap-components
 # !pip install vaderSentiment
+# !pip install wordcloud
 
 import os
 import pandas as pd
@@ -34,6 +35,9 @@ from dash import dash_table
 from dash.exceptions import PreventUpdate
 import plotly.io as pio  # For figure serialization/deserialization
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from wordcloud import WordCloud
+import io
+import base64
 
 # ------------------- Caching Functions -------------------
 
@@ -609,7 +613,7 @@ app.layout = dbc.Container([
             ], className='h-100 mb-4')
         ], xs=12, sm=12, md=12, lg=12, xl=12, className='mb-4')
     ], className='mb-4'),
-            
+    
     # Sentiment Scatter Plot Row
     dbc.Row([
         dbc.Col([
@@ -643,7 +647,19 @@ app.layout = dbc.Container([
             ], className='h-100 mb-4')
         ], width=12),
     ]),
-
+    
+    # Word Cloud Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Word Cloud of Selected Tweets"),
+                dbc.CardBody([
+                    html.Img(id='word-cloud', src='', style={'width': '100%', 'height': 'auto'})
+                ], style={'padding': '0'})
+            ], className='h-100 mb-4')
+        ], width=12)
+    ], className='mb-4'),
+    
     # Tweets Table Row
     dbc.Row([
         dbc.Col([
@@ -675,7 +691,7 @@ app.layout = dbc.Container([
             ], className='h-100 mb-4')
         ], width=12)
     ]),
-
+    
     # Selected Cell Information Row
     dbc.Row([
         dbc.Col(
@@ -704,6 +720,7 @@ app.layout = dbc.Container([
         Output('word-frequency-chart', 'figure'),
         Output('sentiment-scatter-plot', 'figure'),
         Output('polarity-line-chart', 'figure'),
+        Output('word-cloud', 'src'),
         Output('selected-dates-store', 'data')  # Removed 'polarity-line-chart-overall' Output
     ],
     [
@@ -782,6 +799,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         selected_cell_text = html.Div([
             html.P("No tweets selected. Please select a date range or SOM cells.")
         ])
+        word_cloud_src = ''
     else:
         # ------------------- **Add Sentiment Score to the Tweets Table** -------------------
         # Merge the sentiment score into the tweets data
@@ -806,6 +824,17 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             selected_cell_text = html.Div([
                 html.P(f"Number of Tweets in Date Range: {len(df_filtered)}")
             ])
+        
+        # Generate Word Cloud
+        if not tweets_data_df.empty:
+            text_combined = ' '.join(tweets_data_df['tweet'])
+            wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text_combined)
+            img = io.BytesIO()
+            wordcloud.to_image().save(img, format='PNG')
+            img.seek(0)
+            word_cloud_src = "data:image/png;base64,{}".format(base64.b64encode(img.getvalue()).decode())
+        else:
+            word_cloud_src = ''
 
     # Handle case when no data is available after filtering
     if df_filtered.empty or not selected_indices:
@@ -821,9 +850,9 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             font=dict(size=20)
         )
         return empty_fig, empty_fig, selected_cell_text, tweets_data, \
-               base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, selected_dates_store
+               base_distance_map_2d, base_distance_map_3d, empty_fig, empty_fig, empty_fig, word_cloud_src, selected_dates_store
 
-    # ------------------- **Update Sentiment Scatter Plot with Color Blind Friendly Colors** -------------------
+    # Create sentiment scatter plot for selected tweets
     sentiment_plot = px.scatter(
         sentiment_selected,
         x='Sentiment Score',
@@ -831,13 +860,11 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         color='Handle',
         title='Sentiment Polarity vs Total Engagement (Filtered Data)',
         labels={'Sentiment Score': 'Sentiment Polarity', 'Engagement': 'Total Engagement'},
-        hover_data={'tweet': True},  # Enable tweet text in hover
-        color_discrete_sequence=px.colors.qualitative.Safe  # Color blind friendly palette
+        hover_data={'tweet': True}  # Enable tweet text in hover
     )
-    sentiment_plot.update_traces(marker=dict(size=10))
     sentiment_plot.update_layout(template="plotly_white")
 
-    # ------------------- **Update Polarity Line Chart with Color Blind Friendly Colors** -------------------
+    # Create line chart for selected data (by Handle and Overall)
     if not sentiment_selected.empty:
         # Ensure 'Date' column has valid dates
         if sentiment_selected['Date'].isna().any():
@@ -850,19 +877,14 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         # Initialize the figure
         fig_line = go.Figure()
 
-        # Define color sequence
-        color_sequence = px.colors.qualitative.Safe
-        num_colors = len(color_sequence)
-
         # Add per-handle sentiment lines
-        for i, handle in enumerate(sentiment_time_series.columns):
+        for handle in sentiment_time_series.columns:
             fig_line.add_trace(
                 go.Scatter(
                     x=sentiment_time_series.index,  # Dates
                     y=sentiment_time_series[handle],  # Average sentiment score for each handle
                     mode='lines+markers',  # Add markers to make single data points visible
-                    name=f"{handle} Sentiment",
-                    line=dict(color=color_sequence[i % num_colors])  # Assign color from Safe palette
+                    name=f"{handle} Sentiment"
                 )
             )
 
@@ -876,7 +898,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
                 y=sentiment_overall_time_series.values,
                 mode='lines+markers',
                 name='Overall Sentiment',
-                line=dict(color=color_sequence[-1], width=4, dash='dash')  # Use the last color for distinction
+                line=dict(width=4, dash='dash')  # Different style for distinction
             )
         )
 
@@ -1098,9 +1120,16 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             paper_bgcolor='white'
         )
 
+    # ------------------- Generate Word Cloud -------------------
+    if not filters_at_default and not tweets_data_df.empty and word_cloud_src:
+        # word_cloud_src is already generated above
+        pass
+    else:
+        word_cloud_src = ''
+
     # ------------------- **Return All Updated Figures and Data** -------------------
     return fig_tsne, fig_umap, selected_cell_text, tweets_data, \
-           fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, sentiment_plot, fig_line, selected_dates_store
+           fig_distance_map_2d, fig_distance_map_3d, fig_word_freq, sentiment_plot, fig_line, word_cloud_src, selected_dates_store
 
 
 @app.callback(
