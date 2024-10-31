@@ -59,10 +59,10 @@ def load_embeddings(filename='embeddings.npy'):
 # ------------------- Data Loading and Preprocessing -------------------
 
 # Download NLTK data
-nltk.download('stopwords')
-nltk.download('wordnet')
-nltk.download('omw-1.4')
-nltk.download('punkt')
+# nltk.download('stopwords')
+# nltk.download('wordnet')
+# nltk.download('omw-1.4')
+# nltk.download('punkt')
 
 # Load your data
 df = pd.read_csv('tweets.csv')
@@ -640,8 +640,8 @@ app.layout = dbc.Container([
                         style={'width': '100%', 'height': '500px'}
                     )
                 ], style={'padding': '0'})
-            ], className='h-100 mb-4')
-        ], width=12),
+            ])
+        ]),
     ]),
 
     # Tweets Table Row
@@ -727,7 +727,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
     
     ctx = dash.callback_context
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-    
+
     # Convert start_date and end_date to datetime.date objects
     if start_date is not None:
         start_date = pd.to_datetime(start_date).date()
@@ -909,10 +909,17 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
             paper_bgcolor='white'
         )
 
-    # Update t-SNE plot
+    # ------------------- **Update t-SNE Plot** -------------------
     mask_tsne = vis_df_tsne_filtered.index.isin(selected_indices)
+    if selected_cells:
+        # Only plot the selected tweets
+        data_to_plot_tsne = vis_df_tsne_filtered.loc[mask_tsne]
+    else:
+        # Plot all tweets
+        data_to_plot_tsne = vis_df_tsne_filtered
+
     fig_tsne = px.scatter(
-        vis_df_tsne_filtered,
+        data_to_plot_tsne,
         x='x',
         y='y',
         color='engagement_log',
@@ -922,32 +929,18 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         width=600,
         height=600
     )
-    if selected_cells:
-        fig_tsne.update_traces(marker=dict(opacity=0.2))
-        fig_tsne.add_trace(
-            go.Scatter(
-                x=vis_df_tsne_filtered.loc[mask_tsne, 'x'],
-                y=vis_df_tsne_filtered.loc[mask_tsne, 'y'],
-                mode='markers',
-                marker=dict(
-                    color='red',
-                    size=12,
-                    symbol='circle-open',
-                    line=dict(width=2, color='DarkSlateGrey'),
-                    opacity=1.0
-                ),
-                name='Selected Tweets',
-                hoverinfo='text',
-                text=vis_df_tsne_filtered.loc[mask_tsne, 'tweet']
-            )
-        )
-    else:
-        fig_tsne.update_traces(marker=dict(opacity=1.0))
 
-    # Update UMAP plot
+    # ------------------- **Update UMAP Plot** -------------------
     mask_umap = vis_df_umap_filtered.index.isin(selected_indices)
+    if selected_cells:
+        # Only plot the selected tweets
+        data_to_plot_umap = vis_df_umap_filtered.loc[mask_umap]
+    else:
+        # Plot all tweets
+        data_to_plot_umap = vis_df_umap_filtered
+
     fig_umap = px.scatter(
-        vis_df_umap_filtered,
+        data_to_plot_umap,
         x='x',
         y='y',
         color='engagement_log',
@@ -957,27 +950,6 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         width=600,
         height=600
     )
-    if selected_cells:
-        fig_umap.update_traces(marker=dict(opacity=0.2))
-        fig_umap.add_trace(
-            go.Scatter(
-                x=vis_df_umap_filtered.loc[mask_umap, 'x'],
-                y=vis_df_umap_filtered.loc[mask_umap, 'y'],
-                mode='markers',
-                marker=dict(
-                    color='red',
-                    size=12,
-                    symbol='circle-open',
-                    line=dict(width=2, color='DarkSlateGrey'),
-                    opacity=1.0
-                ),
-                name='Selected Tweets',
-                hoverinfo='text',
-                text=vis_df_umap_filtered.loc[mask_umap, 'tweet']
-            )
-        )
-    else:
-        fig_umap.update_traces(marker=dict(opacity=1.0))
 
     # Update distance-map-2d with selected cells highlighted in black
     fig_distance_map_2d = base_distance_map_2d
@@ -1200,9 +1172,6 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
             end = df['date'].max()
 
         # **Adjusted Line: Use vis_df_som instead of df**
-        # Original Line:
-        # filtered_tweets = df[(df['date'] >= start) & (df['date'] <= end)]
-        # Adjusted Line:
         filtered_tweets = vis_df_som[(vis_df_som['date'] >= start) & (vis_df_som['date'] <= end)]
 
         # Extract unique SOM cell coordinates
