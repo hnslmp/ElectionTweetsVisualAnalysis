@@ -59,10 +59,10 @@ def load_embeddings(filename='embeddings.npy'):
 # ------------------- Data Loading and Preprocessing -------------------
 
 # Download NLTK data (ensure this is done before running the code)
-nltk.download('stopwords')
-nltk.download('wordnet')
-nltk.download('omw-1.4')
-nltk.download('punkt')
+# nltk.download('stopwords')
+# nltk.download('wordnet')
+# nltk.download('omw-1.4')
+# nltk.download('punkt')
 
 # Load your data
 df = pd.read_csv('tweets.csv')
@@ -558,6 +558,7 @@ app.layout = dbc.Container([
                             color='engagement_log',
                             color_continuous_scale='Viridis',
                             hover_data=['tweet', 'engagement'],
+                            labels={'engagement_log': 'Engagement (Log)'},
                             title='',
                             width=600,
                             height=600
@@ -579,6 +580,7 @@ app.layout = dbc.Container([
                             color='engagement_log',
                             color_continuous_scale='Viridis',
                             hover_data=['tweet', 'engagement'],
+                            labels={'engagement_log': 'Engagement (Log)'},
                             title='',
                             width=600,
                             height=600
@@ -924,6 +926,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         color='engagement_log',
         color_continuous_scale='Viridis',
         hover_data=['tweet', 'engagement'],
+        labels={'engagement_log': 'Engagement (Log)'},
         title='t-SNE Visualization (Log Engagement)',
         width=600,
         height=600
@@ -945,6 +948,7 @@ def update_visualizations(selected_cells, start_date, end_date, base_distance_ma
         color='engagement_log',
         color_continuous_scale='Viridis',
         hover_data=['tweet', 'engagement'],
+        labels={'engagement_log': 'Engagement (Log)'},
         title='UMAP Visualization (Log Engagement)',
         width=600,
         height=600
