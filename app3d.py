@@ -439,6 +439,121 @@ fig_distance_map.update_layout(
     hovermode='closest'
 )
 
+
+# ------------------- CRITICAL MOVEMENT PREPROCESSING (START) -------------------
+
+# ------------------- Sentiment Over Date -------------------
+
+# Minimum and maximum sentiment scores for both candidates
+min_score = min(sentiment_df['Sentiment Score'])
+max_score = max(sentiment_df['Sentiment Score'])
+
+def normalize_sentiment(score, min_score, max_score):
+    """Normalize the sentiment score to the range [-1, 1]."""
+    if max_score == min_score:  # Prevent division by zero
+        return 0  # or some other appropriate handling
+    normalized_score = 2 * (score - min_score) / (max_score - min_score) - 1
+    return normalized_score
+
+# Ensure the 'Date' column is in datetime format
+sentiment_df['Date'] = pd.to_datetime(sentiment_df['Date'])
+
+# Normalize the sentiment scores for Clinton
+sentiment_df['Hillary_Net_Sentiment'] = sentiment_df[sentiment_df['Handle'] == 'HillaryClinton']['Sentiment Score'].apply(
+    lambda x: normalize_sentiment(x, min_score, max_score)
+)
+
+# Normalize the sentiment scores for Trump
+sentiment_df['Trump_Net_Sentiment'] = sentiment_df[sentiment_df['Handle'] == 'realDonaldTrump']['Sentiment Score'].apply(
+    lambda x: normalize_sentiment(x, min_score, max_score)
+)
+
+# Filter for tweets related to Clinton and Trump
+clinton_tweets = sentiment_df[sentiment_df['Handle'] == 'HillaryClinton']
+trump_tweets = sentiment_df[sentiment_df['Handle'] == 'realDonaldTrump']
+
+# Set the date column as the index for resampling
+clinton_tweets.set_index('Date', inplace=True)
+trump_tweets.set_index('Date', inplace=True)
+
+# Resample to daily normalized sentiment scores
+hillary_daily_sentiment = clinton_tweets['Hillary_Net_Sentiment'].resample('D').mean().reset_index()
+trump_daily_sentiment = trump_tweets['Trump_Net_Sentiment'].resample('D').mean().reset_index()
+
+# Rename the columns for clarity
+hillary_daily_sentiment.rename(columns={'Hillary_Net_Sentiment': 'Hillary_Net_Sentiment'}, inplace=True)
+trump_daily_sentiment.rename(columns={'Trump_Net_Sentiment': 'Trump_Net_Sentiment'}, inplace=True)
+
+# Merge the two DataFrames on the date column
+daily_net_sentiment = pd.merge(hillary_daily_sentiment, trump_daily_sentiment, on='Date', how='outer')
+
+# ------------------- Linear Sentiment Over Date -------------------
+
+# Smooth Hillary Clinton's sentiment scores using the original dates
+hillary_smoothed = lowess(daily_net_sentiment['Hillary_Net_Sentiment'], 
+                           daily_net_sentiment['Date'], 
+                           frac=0.1)
+
+# Smooth Donald Trump's sentiment scores using the original dates
+trump_smoothed = lowess(daily_net_sentiment['Trump_Net_Sentiment'], 
+                         daily_net_sentiment['Date'], 
+                         frac=0.1)
+
+# Create a DataFrame for Hillary's smoothed values
+hillary_smoothed_df = pd.DataFrame({
+    'Date': hillary_smoothed[:, 0],  # Keep original datetime
+    'Hillary_Linear': hillary_smoothed[:, 1]
+})
+
+# Create a DataFrame for Trump's smoothed values
+trump_smoothed_df = pd.DataFrame({
+    'Date': trump_smoothed[:, 0],  # Keep original datetime
+    'Trump_Linear': trump_smoothed[:, 1]
+})
+
+# Ensure the 'Date' column is in datetime format
+hillary_smoothed_df['Date'] = pd.to_datetime(hillary_smoothed_df['Date'])
+trump_smoothed_df['Date'] = pd.to_datetime(trump_smoothed_df['Date'])
+
+# Set the 'Date' column as the index for both smoothed DataFrames
+hillary_smoothed_df.set_index('Date', inplace=True)
+trump_smoothed_df.set_index('Date', inplace=True)
+
+# Optionally, reindex to match the original DataFrame's index
+hillary_smoothed_df = hillary_smoothed_df.reindex(daily_net_sentiment.set_index('Date').index)
+trump_smoothed_df = trump_smoothed_df.reindex(daily_net_sentiment.set_index('Date').index)
+
+# Confidence Interval Calculation
+
+# Merge the smoothed values back into the original DataFrame
+daily_net_sentiment = daily_net_sentiment.merge(hillary_smoothed_df, on='Date', how='outer')
+daily_net_sentiment = daily_net_sentiment.merge(trump_smoothed_df, on='Date', how='outer')
+
+# Calculate standard deviation of the sentiment scores
+hillary_std = np.std(daily_net_sentiment['Hillary_Net_Sentiment'])
+trump_std = np.std(daily_net_sentiment['Trump_Net_Sentiment'])
+
+# Number of observations
+n = daily_net_sentiment['Date'].notnull().sum()  # Count of non-null dates
+
+# Calculate standard errors
+hillary_se = hillary_std / np.sqrt(n)
+trump_se = trump_std / np.sqrt(n)
+
+# 95% confidence level
+confidence_level = 1.96  # For a 95% confidence interval
+
+# Calculate confidence intervals for Hillary Clinton
+hillary_upper = daily_net_sentiment['Hillary_Linear'] + (confidence_level * hillary_se)
+hillary_lower = daily_net_sentiment['Hillary_Linear'] - (confidence_level * hillary_se)
+
+# Calculate confidence intervals for Donald Trump
+trump_upper = daily_net_sentiment['Trump_Linear'] + (confidence_level * trump_se)
+trump_lower = daily_net_sentiment['Trump_Linear'] - (confidence_level * trump_se)
+
+# ------------------- CRITICAL MOVEMENT PREPROCESSING (END) -------------------
+
+
 # ------------------- Dash App Setup -------------------
 
 # Initialize the Dash app with a Bootstrap theme
@@ -691,6 +806,21 @@ app.layout = dbc.Container([
             width=12
         )
     ], className='mb-4'),
+
+    # ------------------------- CRITICAL MOVEMENT (START) -------------------------
+    dbc.Row([
+        dbc.Col(dcc.Graph(id='daily-net-sentiment-plot'), width=12),  
+    ]),
+    
+    dbc.Row([
+        dbc.Col(dcc.Graph(id='net_sentiment_plot_linear'), width=12),  
+    ]),
+
+    html.Div(id='hover-data', style={'margin-top': '20px'}),  # This can be for displaying clicked point info
+    dcc.Graph(id='info-table'),  # New graph for the data table
+
+    # ------------------------- CRITICAL MOVEMENT (END) -------------------------
+
     
 ], fluid=True)
 
@@ -1191,6 +1321,186 @@ def update_selected_cells_and_date(clickData_2d, clickData_3d, reset_all_clicks,
     else:
         # If no recognized input triggered the callback, prevent update
         raise PreventUpdate
+
+
+# ------------------- Critical Movement Graphs (START) -------------------
+
+@app.callback(
+    [
+        Output('daily-net-sentiment-plot', 'figure'), 
+        Output('net_sentiment_plot_linear', 'figure')
+    ],
+    [
+        Input('net_sentiment_plot_linear', 'clickData'),
+    ]
+)
+
+# ------------------- Generate Sentiment Over Date Graph-------------------
+def update_net_sentiment_plot(clickData):  
+
+    # Create the scatter plot
+    net_sentiment_plot = go.Figure()
+
+    # Plot Hillary Clinton's normalized sentiment
+    net_sentiment_plot.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=daily_net_sentiment['Hillary_Net_Sentiment'],
+        mode='lines+markers',
+        name='Hillary Clinton Net Sentiment',
+        line=dict(color='blue', width=2),
+        marker=dict(size=6)
+    ))
+
+    # Plot Donald Trump's normalized sentiment
+    net_sentiment_plot.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=daily_net_sentiment['Trump_Net_Sentiment'],
+        mode='lines+markers',
+        name='Donald Trump Net Sentiment',
+        line=dict(color='red', width=2),
+        marker=dict(size=6)
+    ))
+
+    # Optional: Add a horizontal line at y=0 for reference
+    net_sentiment_plot.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=[0]*len(daily_net_sentiment),  # Line at y=0
+        mode='lines',
+        name='Neutral Sentiment',
+        line=dict(color='grey', dash='dash'),
+    ))
+
+    # Update the layout for the plot
+    net_sentiment_plot.update_layout(
+        title='Daily Net Sentiment Score for Hillary Clinton and Donald Trump',
+        xaxis_title='Date',
+        yaxis_title='Net Sentiment Score',
+        yaxis=dict(range=[-1, 1]),  # Adjust range based on your data
+        template='plotly_white'
+    )
+
+    # ------------------- Generate Sentiment Over Date Linear Graph -------------------
+
+    # Create the figure
+    net_sentiment_plot_linear = go.Figure()
+
+    # Plot Hillary Clinton's smoothed line and confidence intervals
+    net_sentiment_plot_linear.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=daily_net_sentiment['Hillary_Linear'],
+        mode='lines',
+        name='Hillary Clinton (LOWESS)',
+        line=dict(color='blue'), 
+        hovertemplate='Date: %{x|%Y-%m-%d}<br>Sentiment: %{y:.2f}<extra></extra>'  # Customize the hover template
+    ))
+
+    net_sentiment_plot_linear.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=hillary_upper,
+        mode='lines',
+        name='Hillary Confidence Upper',
+        line=dict(width=0),
+        showlegend=False
+    ))
+
+    net_sentiment_plot_linear.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=hillary_lower,
+        mode='lines',
+        fill='tonexty',  # Fill to next y
+        fillcolor='rgba(0, 0, 255, 0.2)',  # Fill color for confidence interval
+        line=dict(width=0),
+        showlegend=False, 
+        name='Hillary Clinton Confidence Interval'
+    ))
+
+    # Plot Donald Trump's smoothed line and confidence intervals
+    net_sentiment_plot_linear.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=daily_net_sentiment['Trump_Linear'],
+        mode='lines',
+        name='Donald Trump (LOWESS)',
+        line=dict(color='red'), 
+        hovertemplate='Date: %{x|%Y-%m-%d}<br>Sentiment: %{y:.2f}<extra></extra>'  # Customize the hover template
+    ))
+
+    net_sentiment_plot_linear.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=trump_upper,
+        mode='lines',
+        name='Trump Confidence Upper',
+        line=dict(width=0),
+        showlegend=False
+    ))
+
+    net_sentiment_plot_linear.add_trace(go.Scatter(
+        x=daily_net_sentiment['Date'],
+        y=trump_lower,
+        mode='lines',
+        fill='tonexty',  # Fill to next y
+        fillcolor='rgba(255, 0, 0, 0.2)',  # Fill color for confidence interval
+        line=dict(width=0),
+        showlegend=False, 
+        name='Trump Confidence Confidence Interval'
+    ))
+
+    # Update layout
+    net_sentiment_plot_linear.update_layout(
+        title='Smoothed Sentiment Analysis of Tweets Over Time (Clinton vs Trump)',
+        xaxis_title='Date',
+        yaxis_title='Normalized Net Sentiment Score',
+        template='plotly_white'
+    )
+
+    # Add marker for the clicked point if it exists
+    if clickData:
+        x, y = (clickData['points'][0]['x'], clickData['points'][0]['y'])
+
+        # Add marker for the clicked point
+        net_sentiment_plot_linear.add_trace(go.Scatter(
+            x=[x],
+            y=[y],
+            mode='markers+text',
+            marker=dict(color='green', size=10, symbol='cross'),
+            name='Clicked Point',
+            text=[f'Clicked Point: {x}'],
+            textposition='top center'
+        ))
+
+        # Add a vertical dashed line at the clicked point
+        net_sentiment_plot_linear.add_shape(
+            type='line',
+            x0=x, y0=0, 
+            x1=x, y1=y,
+            line=dict(color='green', width=2, dash='dash'
+        ))  
+
+    return net_sentiment_plot, net_sentiment_plot_linear    
+
+@app.callback(
+    Output('info-table', 'figure'),
+    Input('net_sentiment_plot_linear', 'clickData')
+)
+def update_table(clickData):
+
+    # Create table data if clicked point exists
+    if clickData:
+        x, y = (clickData['points'][0]['x'], clickData['points'][0]['y'])
+        date_clicked = x  # Assuming x is the date clicked
+        clicked_data = daily_net_sentiment[daily_net_sentiment['Date'] == date_clicked]  
+        if not clicked_data.empty:
+            data = [[f'Clicked Point', date_clicked, clicked_data['Hillary_Net_Sentiment'].values[0], clicked_data['Trump_Net_Sentiment'].values[0]]]
+            return go.Figure(data=[go.Table(
+                header=dict(values=["Point", "Date", "Hillary Clinton Sentiment", "Donald Trump Sentiment"]),
+                cells=dict(values=list(zip(*data)))
+            )])
+    
+    return go.Figure(data=[go.Table(
+        header=dict(values=["Point", "Date", "Hillary Clinton Sentiment", "Donald Trump Sentiment"]),
+        cells=dict(values=[[], [], [], []]))])  # Return an empty table
+
+
+# ------------------- Critical Movement Graphs (END) -------------------
 
 
 # ------------------- Running the Dash App -------------------
