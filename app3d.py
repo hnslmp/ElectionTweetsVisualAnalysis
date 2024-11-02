@@ -9,6 +9,7 @@
 # !pip install dash
 # !pip install dash-bootstrap-components
 # !pip install vaderSentiment
+# !pip install statsmodels
 
 import os
 import pandas as pd
@@ -34,6 +35,9 @@ from dash import dash_table
 from dash.exceptions import PreventUpdate
 import plotly.io as pio  # For figure serialization/deserialization
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from statsmodels.nonparametric.smoothers_lowess import lowess 
+from sklearn.preprocessing import MinMaxScaler 
+import random 
 
 # ------------------- Caching Functions -------------------
 
